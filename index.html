@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceVox Chat Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse-ring {
+            0% { transform: scale(.8); opacity: 0; }
+            100% { transform: scale(1.3); opacity: 0; }
+        }
+        @keyframes pulse-dot {
+            0% { transform: scale(.8); }
+            50% { transform: scale(1); }
+            100% { transform: scale(.8); }
+        }
+        .recording-animation::before {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-color: #ef4444;
+            animation: pulse-ring 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        .recording-dot {
+            animation: pulse-dot 1.25s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">VoiceVox Chat</h1>
+            <p class="text-gray-600">Interactive Voice Chat with Japanese Characters</p>
+        </header>
+
+        <!-- Main Content -->
+        <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
+            <!-- Character & Emotion Selection -->
+            <div class="p-6 border-b border-gray-200">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Character Selection -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Select Character</label>
+                        <select id="character-select" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="1">四国めたん (Shikoku Metan)</option>
+                            <option value="2">ずんだもん (Zundamon)</option>
+                            <option value="3">春日部つむぎ (Kasukabe Tsumugi)</option>
+                            <option value="4">雨晴はう (Amehare Hau)</option>
+                            <option value="7">玄野武宏 (Kurono Takehiro)</option>
+                            <option value="8">白上虎太郎 (Shirakami Kotaro)</option>
+                            <option value="9">青山龍星 (Aoyama Ryusei)</option>
+                            <option value="10">冥鳴ひまり (Meisei Himari)</option>
+                        </select>
+                    </div>
+
+                    <!-- Emotion Selection -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Select Emotion</label>
+                        <select id="emotion-select" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">Normal (Default)</option>
+                            <option value="happy">Happy</option>
+                            <option value="sad">Sad</option>
+                            <option value="angry">Angry</option>
+                            <option value="calm">Calm</option>
+                            <option value="excited">Excited</option>
+                            <option value="nervous">Nervous</option>
+                            <option value="tired">Tired</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Interface -->
+            <div class="p-6">
+                <!-- Chat Messages -->
+                <div id="chat-messages" class="space-y-4 mb-6 h-96 overflow-y-auto">
+                    <!-- Messages will be dynamically added here -->
+                </div>
+
+                <!-- Voice Input Controls -->
+                <div class="flex items-center justify-center space-x-4">
+                    <button id="record-button" class="relative inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                        <span class="recording-dot">
+                            <svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <circle cx="10" cy="10" r="6" />
+                            </svg>
+                        </span>
+                    </button>
+                </div>
+
+                <!-- Recording Status -->
+                <div id="status" class="text-center mt-4 text-sm text-gray-600">
+                    Click the button to start recording
+                </div>
+            </div>
+        </div>
+
+        <!-- Character Description -->
+        <div id="character-info" class="mt-8 max-w-4xl mx-auto bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-2">Character Information</h2>
+            <div id="character-description" class="text-gray-600">
+                Select a character to see their description
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Character information from Python
+        const VOICEVOX_CHARACTERS = {
+            1: {
+                name: "四国めたん",
+                description: "はっきりした芯のある声",
+                styles: ["ノーマル", "あまあま", "ツンツン", "セクシー", "ささやき", "ヒソヒソ"]
+            },
+            2: {
+                name: "ずんだもん",
+                description: "子供っぽい高めの声",
+                styles: ["ノーマル", "あまあま", "ツンツン", "セクシー", "ささやき", "ヒソヒソ", "ヘロヘロ", "なみだめ"]
+            },
+            3: {
+                name: "春日部つむぎ",
+                description: "元気な明るい声"
+            },
+            4: {
+                name: "雨晴はう",
+                description: "優しく可愛い声"
+            },
+            7: {
+                name: "玄野武宏",
+                description: "爽やかな青年の声",
+                styles: ["ノーマル", "喜び", "ツンギレ", "悲しみ"]
+            },
+            8: {
+                name: "白上虎太郎",
+                description: "声変わり直後の少年の声",
+                styles: ["ふつう", "わーい", "おこ", "びくびく", "びえーん"]
+            },
+            9: {
+                name: "青山龍星",
+                description: "重厚で低音な声",
+                styles: ["ノーマル", "熱血", "不機嫌", "喜び", "しっとり", "かなしみ", "囁き"]
+            },
+            10: {
+                name: "冥鳴ひまり",
+                description: "柔らかく温かい声"
+            }
+        };
+
+        // Audio recording setup
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        const recordButton = document.getElementById('record-button');
+        const statusDiv = document.getElementById('status');
+
+        // Update character description when selection changes
+        document.getElementById('character-select').addEventListener('change', function(e) {
+            const character = VOICEVOX_CHARACTERS[e.target.value];
+            const descriptionEl = document.getElementById('character-description');
+            let description = `<p class="mb-2"><strong>${character.name}</strong> - ${character.description}</p>`;
+            if (character.styles) {
+                description += `<p>Available styles: ${character.styles.join(', ')}</p>`;
+            }
+            descriptionEl.innerHTML = description;
+        });
+
+        // Request microphone access
+        async function setupAudioRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: 'audio/webm',  // Use webm for better compatibility
+                    audioBitsPerSecond: 128000
+                });
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    // Convert to WAV before sending
+                    const wavBlob = await convertToWav(audioBlob);
+                    await processAudioData(wavBlob);
+                };
+            } catch (err) {
+                console.error('Error accessing microphone:', err);
+                statusDiv.textContent = 'Error: Could not access microphone';
+            }
+        }
+
+        // Convert webm to wav using audio context
+        async function convertToWav(webmBlob) {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const arrayBuffer = await webmBlob.arrayBuffer();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            
+            // Create WAV file
+            const numberOfChannels = audioBuffer.numberOfChannels;
+            const length = audioBuffer.length * numberOfChannels * 2;
+            const buffer = new ArrayBuffer(44 + length);
+            const view = new DataView(buffer);
+            
+            // Write WAV header
+            writeUTFBytes(view, 0, 'RIFF');
+            view.setUint32(4, 36 + length, true);
+            writeUTFBytes(view, 8, 'WAVE');
+            writeUTFBytes(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, numberOfChannels, true);
+            view.setUint32(24, audioBuffer.sampleRate, true);
+            view.setUint32(28, audioBuffer.sampleRate * 2 * numberOfChannels, true);
+            view.setUint16(32, numberOfChannels * 2, true);
+            view.setUint16(34, 16, true);
+            writeUTFBytes(view, 36, 'data');
+            view.setUint32(40, length, true);
+
+            // Write audio data
+            const floatArray = audioBuffer.getChannelData(0);
+            let offset = 44;
+            for (let i = 0; i < floatArray.length; i++) {
+                const sample = Math.max(-1, Math.min(1, floatArray[i]));
+                view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+                offset += 2;
+            }
+
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        function writeUTFBytes(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        // Process recorded audio
+        async function processAudioData(audioBlob) {
+            statusDiv.textContent = 'Processing...';
+
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.wav');
+            formData.append('speaker_id', document.getElementById('character-select').value);
+            formData.append('emotion', document.getElementById('emotion-select').value);
+
+            try {
+                const response = await fetch('/api/process-audio', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Add messages to chat
+                    addMessage(data.user_text, true);
+                    addMessage(data.bot_response, false);
+
+                    // Play the response audio
+                    const audio = new Audio('data:audio/wav;base64,' + data.audio);
+                    await audio.play();
+                } else {
+                    statusDiv.textContent = 'Error: ' + data.error;
+                    console.error('Server error:', data.error);
+                }
+            } catch (err) {
+                console.error('Error processing audio:', err);
+                statusDiv.textContent = 'Error processing audio';
+            }
+
+            statusDiv.textContent = 'Click the button to start recording';
+        }
+
+        // Initialize audio recording
+        setupAudioRecording();
+
+        // Handle record button clicks
+        recordButton.addEventListener('click', function() {
+            if (!isRecording) {
+                startRecording();
+            } else {
+                stopRecording();
+            }
+        });
+
+        function startRecording() {
+            audioChunks = [];
+            mediaRecorder.start();
+            isRecording = true;
+            recordButton.classList.add('recording-animation');
+            statusDiv.textContent = 'Recording... Click again to stop';
+        }
+
+        function stopRecording() {
+            mediaRecorder.stop();
+            isRecording = false;
+            recordButton.classList.remove('recording-animation');
+        }
+
+        function addMessage(text, isUser = false) {
+            const messagesDiv = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
+            
+            messageDiv.innerHTML = `
+                <div class="max-w-xs lg:max-w-md ${isUser ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'} rounded-lg px-4 py-2">
+                    <p class="text-sm">${text}</p>
+                </div>
+            `;
+            
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+    </script>
+</body>
+</html> 

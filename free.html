@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceVoxチャット</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse-ring {
+            0% { transform: scale(.8); opacity: 0; }
+            100% { transform: scale(1.3); opacity: 0; }
+        }
+        @keyframes pulse-dot {
+            0% { transform: scale(.8); }
+            50% { transform: scale(1); }
+            100% { transform: scale(.8); }
+        }
+        .recording-animation::before {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-color: #ef4444;
+            animation: pulse-ring 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        .recording-dot {
+            animation: pulse-dot 1.25s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+        }
+        .disabled-btn {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">VoiceVoxチャット</h1>
+            <p class="text-gray-600">日本語キャラクターとの対話型音声会話</p>
+            <a href="/" class="inline-block mt-4 px-4 py-2 bg-gray-600 text-white text-sm rounded-md hover:bg-gray-700 transition-colors">
+                ホームに戻る
+            </a>
+        </header>
+
+        <!-- Main Content -->
+        <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
+            <!-- Character Display -->
+            <div class="p-6 border-b border-gray-200">
+                <div class="grid grid-cols-1 gap-6">
+                    <!-- Character Info Display (read-only) -->
+                    <div class="p-4 bg-gray-50 rounded-md">
+                        <h3 class="text-sm font-medium text-gray-700 mb-2">選択中のキャラクター</h3>
+                        <div id="selected-persona-display" class="text-gray-800">
+                            <!-- Will be filled by JavaScript -->
+                        </div>
+                    </div>
+
+                    <!-- Hidden Character and Emotion Selects (For internal use) -->
+                    <div class="hidden">
+                        <select id="character-select">
+                            <option value="9">青山龍星</option>
+                        </select>
+                        <select id="emotion-select">
+                            <option value="monotone">モノトーン</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Interface -->
+            <div class="p-6">
+                <!-- Chat Messages -->
+                <div id="chat-messages" class="space-y-4 mb-6 h-96 overflow-y-auto">
+                    <!-- Messages will be dynamically added here -->
+                </div>
+
+                <!-- Voice Input Controls -->
+                <div class="flex items-center justify-center space-x-4">
+                    <button id="record-button" class="relative inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500" disabled>
+                        <span class="recording-dot">
+                            <svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <circle cx="10" cy="10" r="6" />
+                            </svg>
+                        </span>
+                    </button>
+                </div>
+
+                <!-- Recording Status -->
+                <div id="status" class="text-center mt-4 text-sm text-gray-600">
+                    録音を開始するにはボタンをクリックしてください
+                </div>
+
+                <!-- Session Progress -->
+                <div class="mt-8 bg-blue-50 rounded-md p-4">
+                    <h3 class="text-lg font-medium text-gray-800 mb-2">セッション進行状況</h3>
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-sm text-gray-600">質問:</span>
+                        <span id="topic-counter" class="text-sm font-medium">0 / 3</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                    </div>
+                    <div class="mt-6 text-right">
+                        <button id="end-session-btn" class="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors disabled-btn" disabled>
+                            セッション終了
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Character Description -->
+        <div id="character-info" class="mt-8 max-w-4xl mx-auto bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-2">キャラクター情報</h2>
+            <div id="character-description" class="text-gray-600">
+                キャラクターを選択すると、その説明が表示されます
+            </div>
+        </div>
+
+        <!-- Self-report Modal (Hidden by default) -->
+        <div id="report-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+            <div class="bg-white rounded-lg p-6 max-w-2xl w-full max-h-90vh overflow-y-auto">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">会話の振り返り</h2>
+                
+                <!-- System Report Section -->
+                <div class="mb-6">
+                    <h3 class="text-lg font-medium text-gray-700 mb-2">システムからのフィードバック</h3>
+                    <div id="system-report" class="p-4 bg-gray-50 rounded-md text-gray-800 mb-2">
+                        <!-- Will be filled automatically -->
+                    </div>
+                </div>
+                
+                <!-- User Report Section -->
+                <div class="mb-6">
+                    <h3 class="text-lg font-medium text-gray-700 mb-2">あなたの感想をお聞かせください</h3>
+                    <textarea id="user-report" class="w-full p-2 border border-gray-300 rounded-md h-32" placeholder="会話の感想、良かった点、改善すべき点などをご自由にお書きください"></textarea>
+                </div>
+                
+                <!-- Detailed Questions Section -->
+                <div class="mb-6">
+                    <h3 class="text-lg font-medium text-gray-700 mb-2">詳細な質問</h3>
+                    
+                    <div class="space-y-4">
+                        <!-- Vocabulary Question -->
+                        <div>
+                            <p class="text-gray-700 mb-1">ロボットと話すとき、普段とは異なる言葉遣いや言い回しをしましたか？</p>
+                            <div class="flex items-center space-x-4">
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="vocabulary" value="simplified" class="form-radio">
+                                    <span class="ml-2">はい、簡単な言葉を使った</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="vocabulary" value="normal" class="form-radio" checked>
+                                    <span class="ml-2">いいえ、普段通りだった</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="vocabulary" value="complex" class="form-radio">
+                                    <span class="ml-2">むしろ丁寧に話した</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Expression Ease Question -->
+                        <div>
+                            <p class="text-gray-700 mb-1">ロボットに自分の考えを伝えるのは簡単でしたか？</p>
+                            <div class="flex items-center space-x-4">
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="expression" value="easier" class="form-radio">
+                                    <span class="ml-2">人間よりも簡単だった</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="expression" value="same" class="form-radio" checked>
+                                    <span class="ml-2">人間と変わらなかった</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="expression" value="harder" class="form-radio">
+                                    <span class="ml-2">人間より難しかった</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Comfort Question -->
+                        <div>
+                            <p class="text-gray-700 mb-1">ロボットとの会話は心地よかったですか？</p>
+                            <div class="flex items-center space-x-4">
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="comfort" value="very" class="form-radio">
+                                    <span class="ml-2">とても心地よかった</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="comfort" value="somewhat" class="form-radio" checked>
+                                    <span class="ml-2">まあまあ心地よかった</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="comfort" value="not" class="form-radio">
+                                    <span class="ml-2">あまり心地よくなかった</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Emotional Connection Question -->
+                        <div>
+                            <p class="text-gray-700 mb-1">ロボットとの間に感情的なつながりを感じましたか？</p>
+                            <div class="flex items-center space-x-4">
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="emotion" value="strong" class="form-radio">
+                                    <span class="ml-2">強く感じた</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="emotion" value="some" class="form-radio" checked>
+                                    <span class="ml-2">少し感じた</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="emotion" value="none" class="form-radio">
+                                    <span class="ml-2">感じなかった</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Voice Quality Question -->
+                        <div>
+                            <p class="text-gray-700 mb-1">ロボットの声は自然に感じましたか？</p>
+                            <div class="flex items-center space-x-4">
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="voice" value="natural" class="form-radio">
+                                    <span class="ml-2">とても自然だった</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="voice" value="ok" class="form-radio" checked>
+                                    <span class="ml-2">許容できる範囲だった</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="voice" value="unnatural" class="form-radio">
+                                    <span class="ml-2">不自然だった</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Frustration Question -->
+                        <div>
+                            <p class="text-gray-700 mb-1">会話中にイライラや不満を感じることはありましたか？</p>
+                            <div class="flex items-center space-x-4">
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="frustration" value="none" class="form-radio" checked>
+                                    <span class="ml-2">全くなかった</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="frustration" value="some" class="form-radio">
+                                    <span class="ml-2">少しあった</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="frustration" value="much" class="form-radio">
+                                    <span class="ml-2">頻繁にあった</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Rating Section -->
+                <div class="mb-6">
+                    <h3 class="text-lg font-medium text-gray-700 mb-2">総合評価</h3>
+                    <div class="flex items-center justify-center space-x-2">
+                        <span class="text-gray-600">悪い</span>
+                        <div class="flex items-center">
+                            <input type="radio" id="rating-1" name="rating" value="1" class="hidden peer">
+                            <label for="rating-1" class="w-8 h-8 flex items-center justify-center rounded-full border border-gray-300 cursor-pointer peer-checked:bg-blue-500 peer-checked:text-white">1</label>
+                            
+                            <input type="radio" id="rating-2" name="rating" value="2" class="hidden peer">
+                            <label for="rating-2" class="w-8 h-8 flex items-center justify-center rounded-full border border-gray-300 cursor-pointer peer-checked:bg-blue-500 peer-checked:text-white">2</label>
+                            
+                            <input type="radio" id="rating-3" name="rating" value="3" class="hidden peer">
+                            <label for="rating-3" class="w-8 h-8 flex items-center justify-center rounded-full border border-gray-300 cursor-pointer peer-checked:bg-blue-500 peer-checked:text-white">3</label>
+                            
+                            <input type="radio" id="rating-4" name="rating" value="4" class="hidden peer" checked>
+                            <label for="rating-4" class="w-8 h-8 flex items-center justify-center rounded-full border border-gray-300 cursor-pointer peer-checked:bg-blue-500 peer-checked:text-white">4</label>
+                            
+                            <input type="radio" id="rating-5" name="rating" value="5" class="hidden peer">
+                            <label for="rating-5" class="w-8 h-8 flex items-center justify-center rounded-full border border-gray-300 cursor-pointer peer-checked:bg-blue-500 peer-checked:text-white">5</label>
+                        </div>
+                        <span class="text-gray-600">良い</span>
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="flex justify-end space-x-2">
+                    <button id="send-report-btn" class="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors">送信する</button>
+                    <button id="close-modal-btn" class="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors">閉じる</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Character information from Python
+        const VOICEVOX_CHARACTERS = {
+            1: {
+                name: "四国めたん",
+                description: "はっきりした芯のある声",
+                styles: ["ノーマル", "あまあま", "ツンツン", "セクシー", "ささやき", "ヒソヒソ"]
+            },
+            2: {
+                name: "ずんだもん",
+                description: "子供っぽい高めの声",
+                styles: ["ノーマル", "あまあま", "ツンツン", "セクシー", "ささやき", "ヒソヒソ", "ヘロヘロ", "なみだめ"]
+            },
+            3: {
+                name: "春日部つむぎ",
+                description: "元気な明るい声"
+            },
+            4: {
+                name: "雨晴はう",
+                description: "優しく可愛い声"
+            },
+            7: {
+                name: "玄野武宏",
+                description: "爽やかな青年の声",
+                styles: ["ノーマル", "喜び", "ツンギレ", "悲しみ"]
+            },
+            8: {
+                name: "白上虎太郎",
+                description: "声変わり直後の少年の声",
+                styles: ["ふつう", "わーい", "おこ", "びくびく", "びえーん"]
+            },
+            9: {
+                name: "青山龍星",
+                description: "重厚で低音な声",
+                styles: ["ノーマル", "熱血", "不機嫌", "喜び", "しっとり", "かなしみ", "囁き"]
+            },
+            10: {
+                name: "冥鳴ひまり",
+                description: "柔らかく温かい声"
+            }
+        };
+
+        // Define persona information
+        const PERSONAS = {
+            "monotone-9": {
+                character: "9",
+                emotion: "monotone",
+                description: "青山龍星: 穏やかでゆっくりと話す声。わかりやすい言葉で、丁寧に話します。"
+            },
+            "energetic-1": {
+                character: "1",
+                emotion: "energetic",
+                description: "四国めたん: 明るく元気な話し方。親しみやすく、笑顔の感じられる声で話します。"
+            },
+            "melancholic-8": {
+                character: "8",
+                emotion: "melancholic",
+                description: "白上虎太郎: やさしく寄り添うような話し方。懐かしい言葉も使いながら、ゆっくり話します。"
+            }
+        };
+
+        // Audio recording setup
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        const recordButton = document.getElementById('record-button');
+        const statusDiv = document.getElementById('status');
+        const characterSelect = document.getElementById('character-select');
+        const emotionSelect = document.getElementById('emotion-select');
+        const selectedPersonaDisplay = document.getElementById('selected-persona-display');
+        const characterDescription = document.getElementById('character-description');
+
+        // Load character selection from localStorage
+        function loadCharacterFromLocalStorage() {
+            const savedPersona = localStorage.getItem('selectedPersona');
+            console.log("Loading character from localStorage, saved persona:", savedPersona);
+            
+            if (savedPersona && PERSONAS[savedPersona]) {
+                // Update hidden selects
+                const persona = PERSONAS[savedPersona];
+                
+                // Check if this is the energetic persona and ensure it's using speaker ID 1
+                if (savedPersona === "energetic-1") {
+                    console.log("Energetic persona detected - explicitly setting to speaker ID 1");
+                    characterSelect.value = "1";
+                    emotionSelect.value = "energetic";
+                } else {
+                    characterSelect.value = persona.character;
+                    emotionSelect.value = persona.emotion;
+                }
+                
+                // Update displays
+                selectedPersonaDisplay.textContent = PERSONAS[savedPersona].description;
+                characterDescription.textContent = PERSONAS[savedPersona].description;
+                
+                console.log("Loaded persona from localStorage:", savedPersona);
+                console.log("Set characterSelect to:", characterSelect.value);
+                console.log("Set emotionSelect to:", emotionSelect.value);
+                
+                return true;
+            }
+            return false;
+        }
+        
+        // Initialize character on page load
+        if (!loadCharacterFromLocalStorage()) {
+            // If no selection in localStorage, set default
+            const defaultPersona = "monotone-9";
+            const persona = PERSONAS[defaultPersona];
+            characterSelect.value = persona.character;
+            emotionSelect.value = persona.emotion;
+            selectedPersonaDisplay.textContent = persona.description;
+            characterDescription.textContent = persona.description;
+            
+            console.log("Using default persona:", defaultPersona);
+            console.log("Set characterSelect to:", persona.character);
+            console.log("Set emotionSelect to:", persona.emotion);
+            
+            // Save to localStorage to persist
+            localStorage.setItem('selectedPersona', defaultPersona);
+        }
+
+        // Debug output of current character settings
+        console.log("Current character settings at initialization:");
+        console.log("- Character select value:", characterSelect.value);
+        console.log("- Emotion select value:", emotionSelect.value);
+        console.log("- Selected persona from localStorage:", localStorage.getItem('selectedPersona'));
+
+        // Request microphone access
+        async function setupAudioRecording() {
+            try {
+                console.log("Requesting microphone access...");
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                console.log("Microphone access granted, setting up MediaRecorder");
+                
+                // Check what mimeTypes are supported
+                const supportedMimeTypes = [
+                    'audio/webm',
+                    'audio/webm;codecs=opus',
+                    'audio/ogg;codecs=opus'
+                ].filter(mimeType => MediaRecorder.isTypeSupported(mimeType));
+                
+                console.log("Supported MIME types:", supportedMimeTypes);
+                
+                // Use the first supported MIME type
+                const mimeType = supportedMimeTypes[0] || 'audio/webm';
+                console.log("Using MIME type:", mimeType);
+                
+                mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: mimeType,
+                    audioBitsPerSecond: 128000
+                });
+                
+                console.log("MediaRecorder initialized with options:", {
+                    mimeType: mimeType,
+                    audioBitsPerSecond: 128000
+                });
+
+                mediaRecorder.ondataavailable = (event) => {
+                    console.log("Data available event, chunk size:", event.data.size);
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    console.log("MediaRecorder stopped, processing audio chunks...");
+                    console.log("Number of audio chunks:", audioChunks.length);
+                    
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    console.log("Created audio blob, size:", audioBlob.size);
+                    
+                    console.log("Converting to WAV format...");
+                    try {
+                        const wavBlob = await convertToWav(audioBlob);
+                        console.log("WAV conversion complete, size:", wavBlob.size);
+                        await processAudioData(wavBlob);
+                    } catch (e) {
+                        console.error("Error in WAV conversion:", e);
+                        statusDiv.textContent = 'WAV変換エラー';
+                    }
+                };
+
+                // Update UI to show microphone is ready
+                statusDiv.textContent = '録音を開始するにはボタンをクリックしてください';
+                recordButton.disabled = false;
+                console.log("Audio recording setup complete");
+            } catch (err) {
+                console.error('Error accessing microphone:', err);
+                console.error('Error name:', err.name);
+                console.error('Error message:', err.message);
+                
+                statusDiv.textContent = 'マイクにアクセスできません。ブラウザの設定でマイクへのアクセスを許可してください。';
+                statusDiv.classList.add('text-red-500', 'font-bold');
+                
+                // Add a help message with instructions
+                const helpDiv = document.createElement('div');
+                helpDiv.className = 'mt-4 p-4 bg-yellow-100 text-yellow-800 rounded-md';
+                helpDiv.innerHTML = `
+                    <h3 class="font-bold">マイクのアクセス方法:</h3>
+                    <ul class="list-disc ml-5 mt-2">
+                        <li>ブラウザの権限ダイアログで「許可」をクリックしてください</li>
+                        <li>アドレスバーの左側にあるアイコンをクリックして、マイクの権限を確認してください</li>
+                        <li>ブラウザの設定から、このサイトにマイクの使用を許可してください</li>
+                        <li>別のブラウザ（Chrome, Firefox, Edgeなど）を試してみてください</li>
+                    </ul>
+                `;
+                
+                // Add a retry button
+                const retryButton = document.createElement('button');
+                retryButton.className = 'mt-4 px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors';
+                retryButton.textContent = '再試行';
+                retryButton.onclick = () => {
+                    location.reload();
+                };
+                
+                const controlsDiv = document.querySelector('.flex.items-center.justify-center');
+                controlsDiv.appendChild(retryButton);
+                
+                document.querySelector('.p-6').appendChild(helpDiv);
+                
+                // Disable record button
+                recordButton.disabled = true;
+                recordButton.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        // Convert webm to wav using audio context
+        async function convertToWav(webmBlob) {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const arrayBuffer = await webmBlob.arrayBuffer();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            
+            // Create WAV file
+            const numberOfChannels = audioBuffer.numberOfChannels;
+            const length = audioBuffer.length * numberOfChannels * 2;
+            const buffer = new ArrayBuffer(44 + length);
+            const view = new DataView(buffer);
+            
+            // Write WAV header
+            writeUTFBytes(view, 0, 'RIFF');
+            view.setUint32(4, 36 + length, true);
+            writeUTFBytes(view, 8, 'WAVE');
+            writeUTFBytes(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, numberOfChannels, true);
+            view.setUint32(24, audioBuffer.sampleRate, true);
+            view.setUint32(28, audioBuffer.sampleRate * 2 * numberOfChannels, true);
+            view.setUint16(32, numberOfChannels * 2, true);
+            view.setUint16(34, 16, true);
+            writeUTFBytes(view, 36, 'data');
+            view.setUint32(40, length, true);
+
+            // Write audio data
+            const floatArray = audioBuffer.getChannelData(0);
+            let offset = 44;
+            for (let i = 0; i < floatArray.length; i++) {
+                const sample = Math.max(-1, Math.min(1, floatArray[i]));
+                view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+                offset += 2;
+            }
+
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        function writeUTFBytes(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        // Expanded pool of predefined questions for conversation-based activities
+        const allQuestions = [
+            "お元気ですか？今日はどんな一日でしたか？",
+            "若い頃の思い出で、特に楽しかったことは何ですか？",
+            "昔よく食べていた好きなお料理はありますか？",
+            "どんな音楽がお好きですか？若い頃によく聴いていた歌はありますか？",
+            "昔の遊びで、今でも覚えているものはありますか？",
+            "小さい頃、どんな遊びが好きでしたか？",
+            "お祭りや行事の思い出はありますか？",
+            "春夏秋冬、どの季節が一番好きですか？理由も教えてください",
+            "旅行で行った場所で、特に思い出に残っている所はどこですか？",
+            "好きな花や植物はありますか？",
+            "家族との楽しい思い出を教えてください",
+            "若い頃と比べて、今の世の中で良くなったと思うことはありますか？",
+            "お孫さんやお子さんとどんなことをして遊びますか？",
+            "好きなテレビ番組や昔のドラマはありますか？",
+            "昔の学校生活はどんな感じでしたか？",
+            "昔ながらの習慣で、大切にしているものはありますか？",
+            "季節の行事で楽しみにしているものはありますか？",
+            "好きなお茶や飲み物は何ですか？",
+            "近所でよく行く場所や散歩コースはありますか？",
+            "今までで一番うれしかったことは何ですか？"
+        ];
+
+        let selectedQuestions = [];
+        let currentQuestionIndex = 0;
+        let exchangeCount = 0;
+        let currentTopic = "";
+        const EXCHANGES_PER_TOPIC = 5;
+        const TOTAL_TOPICS = 3;
+        const topicCounter = document.getElementById('topic-counter');
+        const progressBar = document.getElementById('progress-bar');
+        const sessionData = {
+            isComplete: false,
+            topicsCompleted: 0
+        };
+
+        // Update tracking when messages are added
+        const originalAddMessage = addMessage;
+        addMessage = function(text, isUser = false) {
+            originalAddMessage(text, isUser);
+            
+            // Track message
+            conversationData.messageCount++;
+            if (isUser) {
+                conversationData.userMessages.push(text);
+            } else {
+                conversationData.botMessages.push(text);
+            }
+            
+            // Update character info if not already set
+            if (!conversationData.currentCharacter) {
+                const charId = characterSelect.value;
+                const charInfo = VOICEVOX_CHARACTERS[charId];
+                conversationData.currentCharacter = charInfo ? charInfo.name : "不明";
+                
+                const emotionKey = emotionSelect.value;
+                let emotionName = "標準";
+                if (emotionKey === "monotone") emotionName = "穏やか";
+                if (emotionKey === "energetic") emotionName = "元気";
+                if (emotionKey === "melancholic") emotionName = "物思い";
+                conversationData.currentEmotion = emotionName;
+            }
+            
+            // Track topic changes
+            if (!isUser && currentTopic && !conversationData.topics.includes(currentTopic)) {
+                conversationData.topics.push(currentTopic);
+            }
+            
+            // Update progress UI
+            updateProgressUI();
+        };
+        
+        // Function to update progress UI
+        function updateProgressUI() {
+            // Update topic counter
+            topicCounter.textContent = `${currentQuestionIndex} / ${TOTAL_TOPICS}`;
+            
+            // Calculate progress percentage
+            const progress = (currentQuestionIndex / TOTAL_TOPICS) * 100;
+            progressBar.style.width = `${progress}%`;
+            
+            // Update session data
+            sessionData.topicsCompleted = currentQuestionIndex;
+            sessionData.isComplete = currentQuestionIndex >= TOTAL_TOPICS;
+            
+            // Enable or disable end session button based on completion
+            endSessionBtn.disabled = !sessionData.isComplete;
+            endSessionBtn.classList.toggle('bg-gray-500', !sessionData.isComplete);
+            endSessionBtn.classList.toggle('bg-blue-500', sessionData.isComplete);
+            
+            if (sessionData.isComplete) {
+                endSessionBtn.textContent = 'セッション完了 - 振り返りを行う';
+            }
+        }
+
+        // Function to randomly select 3 questions from the pool
+        function selectRandomQuestions() {
+            // Create a copy of the questions array
+            const questionsCopy = [...allQuestions];
+            const selected = [];
+            
+            // Randomly select 3 questions
+            for (let i = 0; i < 3; i++) {
+                if (questionsCopy.length === 0) break;
+                
+                const randomIndex = Math.floor(Math.random() * questionsCopy.length);
+                selected.push(questionsCopy[randomIndex]);
+                questionsCopy.splice(randomIndex, 1);
+            }
+            
+            return selected;
+        }
+
+        // Function to start the conversation
+        function startConversation() {
+            // Select random questions at the beginning
+            if (selectedQuestions.length === 0) {
+                selectedQuestions = selectRandomQuestions();
+                const introMessage = "今日は楽しくお話ししましょう。いくつか質問をさせていただいてもよろしいですか？";
+                addMessage(introMessage, false);
+                
+                // Read out the intro message
+                speakText(introMessage);
+                
+                // Wait a moment before showing the first question
+                setTimeout(() => {
+                    if (currentQuestionIndex < selectedQuestions.length) {
+                        const question = selectedQuestions[currentQuestionIndex];
+                        currentTopic = question;
+                        addMessage(question, false);
+                        
+                        // Read out the question
+                        speakText(question);
+                        
+                        exchangeCount = 0;
+                        
+                        // Update progress UI
+                        updateProgressUI();
+                    }
+                }, 3000); // Longer delay to allow the intro to be read first
+            } else if (currentQuestionIndex < selectedQuestions.length) {
+                const question = selectedQuestions[currentQuestionIndex];
+                currentTopic = question;
+                addMessage(question, false);
+                
+                // Read out the question
+                speakText(question);
+                
+                exchangeCount = 0;
+                
+                // Update progress UI
+                updateProgressUI();
+            } else {
+                const completionMessage = "今日はたくさんのお話をありがとうございました。とても楽しかったです。3つの質問すべて終わりました。セッション完了ボタンをクリックして、振り返りを行いましょう。";
+                addMessage(completionMessage, false);
+                
+                // Read out the completion message
+                speakText(completionMessage);
+                
+                // Mark session as complete
+                sessionData.isComplete = true;
+                updateProgressUI();
+            }
+        }
+
+        // Speech queue to manage sequential speaking
+        let speechQueue = [];
+        let isSpeaking = false;
+        let currentAudio = null;
+
+        // Function to speak text using VOICEVOX
+        async function speakText(text) {
+            // Add text to speech queue
+            speechQueue.push(text);
+            console.log("Added text to speech queue. Queue length:", speechQueue.length);
+            
+            // If not already speaking, start the speech process
+            if (!isSpeaking) {
+                processNextSpeech();
+            }
+        }
+
+        // Process the next item in the speech queue
+        async function processNextSpeech() {
+            if (speechQueue.length === 0) {
+                isSpeaking = false;
+                currentAudio = null;
+                return;
+            }
+            
+            // Cancel any currently playing audio
+            if (currentAudio) {
+                try {
+                    currentAudio.pause();
+                    currentAudio = null;
+                } catch (err) {
+                    console.error("Error stopping current audio:", err);
+                }
+            }
+            
+            isSpeaking = true;
+            const text = speechQueue.shift();
+            
+            try {
+                console.log("Processing speech:", text);
+                
+                // Ensure speaker_id and emotion have valid values
+                let speaker = characterSelect.value;
+                let emotion = emotionSelect.value;
+                
+                // Set defaults if empty
+                if (!speaker || speaker === "") {
+                    speaker = "9"; // Default to 青山龍星
+                    console.log("Using default speaker_id:", speaker);
+                }
+                
+                if (!emotion || emotion === "") {
+                    emotion = "monotone"; // Default to monotone
+                    console.log("Using default emotion:", emotion);
+                }
+                
+                // Handle energetic persona specifically
+                if (emotion === "energetic") {
+                    console.log("Energetic emotion detected - ensuring speaker_id is 1 (四国めたん)");
+                    speaker = "1";
+                }
+                
+                console.log("Using speaker_id:", speaker);
+                console.log("Using emotion:", emotion);
+                
+                const formData = new FormData();
+                formData.append('text', text);
+                formData.append('speaker_id', speaker);
+                formData.append('emotion', emotion);
+                
+                console.log("Sending request to /api/synthesize...");
+                const response = await fetch('/api/synthesize', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                console.log("Response status:", response.status);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log("Response data:", data);
+                    
+                    if (data.success) {
+                        console.log("Creating audio element with base64 data");
+                        const audio = new Audio('data:audio/wav;base64,' + data.audio);
+                        currentAudio = audio;
+                        
+                        // Add event listener for when audio finishes playing
+                        audio.addEventListener('ended', () => {
+                            console.log("Audio playback finished, processing next speech");
+                            currentAudio = null;
+                            setTimeout(() => processNextSpeech(), 300); // Small delay between speeches
+                        });
+                        
+                        // Add error handling for audio playback
+                        audio.addEventListener('error', (e) => {
+                            console.error("Audio playback error:", e);
+                            currentAudio = null;
+                            setTimeout(() => processNextSpeech(), 300); // Continue with next speech on error
+                        });
+                        
+                        console.log("Playing audio...");
+                        try {
+                            await audio.play();
+                            console.log("Audio playback started");
+                        } catch (playError) {
+                            console.error("Error starting audio playback:", playError);
+                            currentAudio = null;
+                            setTimeout(() => processNextSpeech(), 300); // Continue with next speech on error
+                        }
+                    } else {
+                        console.error("Synthesis failed:", data.error);
+                        currentAudio = null;
+                        setTimeout(() => processNextSpeech(), 300); // Continue with next speech on error
+                    }
+                } else {
+                    console.error("Synthesis request failed with status:", response.status);
+                    const errorText = await response.text();
+                    console.error("Error details:", errorText);
+                    currentAudio = null;
+                    setTimeout(() => processNextSpeech(), 300); // Continue with next speech on error
+                }
+            } catch (err) {
+                console.error('Error in processNextSpeech function:', err);
+                currentAudio = null;
+                setTimeout(() => processNextSpeech(), 300); // Continue with next speech on error
+            }
+        }
+
+        // Modify processAudioData to handle conversation flow
+        async function processAudioData(audioBlob) {
+            statusDiv.textContent = '処理中...';
+            console.log("processAudioData called with blob size:", audioBlob.size);
+
+            // Check if audio is too small (likely silent or too short)
+            if (audioBlob.size < 10000) {
+                statusDiv.textContent = '録音が短すぎるか、音声が検出されませんでした。もう一度お試しください。';
+                setTimeout(() => {
+                    statusDiv.textContent = '録音を開始するにはボタンをクリックしてください';
+                }, 3000);
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.wav');
+            
+            // Get current speaker_id and emotion values directly from select elements
+            const speaker = characterSelect.value;
+            const emotion = emotionSelect.value;
+            
+            // Special handling for energetic emotion - make sure we're using 四国めたん (ID 1)
+            let finalSpeakerId = speaker;
+            if (emotion === "energetic") {
+                console.log("Energetic emotion detected - using speaker_id 1 (四国めたん)");
+                finalSpeakerId = "1";
+            }
+            
+            // Log the values we're sending
+            console.log("Sending speaker_id:", finalSpeakerId);
+            console.log("Sending emotion:", emotion);
+            
+            formData.append('speaker_id', finalSpeakerId);
+            formData.append('emotion', emotion);
+            
+            // Add the current topic and exchange count as context for the AI
+            formData.append('context', currentTopic);
+            formData.append('exchange_count', exchangeCount);
+            formData.append('max_exchanges', EXCHANGES_PER_TOPIC);
+            
+            console.log("FormData prepared with:");
+            console.log("- speaker_id:", finalSpeakerId);
+            console.log("- emotion:", emotion);
+            console.log("- context:", currentTopic);
+            console.log("- exchange_count:", exchangeCount);
+
+            try {
+                console.log("Sending audio to /api/process-audio...");
+                const response = await fetch('/api/process-audio', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                console.log("Response status:", response.status);
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error("Server error response:", errorData);
+                    
+                    // Show error message to user
+                    statusDiv.textContent = errorData.error || 'サーバーエラー: ' + response.status;
+                    statusDiv.classList.add('text-red-500');
+                    
+                    // Reset status after a delay
+                    setTimeout(() => {
+                        statusDiv.textContent = '録音を開始するにはボタンをクリックしてください';
+                        statusDiv.classList.remove('text-red-500');
+                    }, 5000);
+                    
+                    return;
+                }
+
+                const data = await response.json();
+                console.log("Response data received:", data);
+                
+                if (data.success) {
+                    console.log("Successfully processed audio");
+                    console.log("User text:", data.user_text);
+                    console.log("Bot response:", data.bot_response);
+                    
+                    // Add messages to chat
+                    addMessage(data.user_text, true);
+                    addMessage(data.bot_response, false);
+
+                    // Play the response audio
+                    console.log("Playing response audio...");
+                    const audio = new Audio('data:audio/wav;base64,' + data.audio);
+                    await audio.play();
+
+                    // Increment exchange count
+                    exchangeCount++;
+                    
+                    // Store session data continuously
+                    const sessionDataKey = `voicevox_session_${Date.now()}`;
+                    const currentSessionData = {
+                        timestamp: new Date().toISOString(),
+                        topicIndex: currentQuestionIndex,
+                        exchangeCount: exchangeCount,
+                        topic: currentTopic,
+                        userMessage: data.user_text,
+                        botResponse: data.bot_response,
+                        character: conversationData.currentCharacter,
+                        emotion: conversationData.currentEmotion
+                    };
+                    
+                    // Store in localStorage (temporary storage)
+                    try {
+                        // Get existing session data or initialize empty array
+                        let allSessionData = JSON.parse(localStorage.getItem('voicevox_conversation_data') || '[]');
+                        allSessionData.push(currentSessionData);
+                        localStorage.setItem('voicevox_conversation_data', JSON.stringify(allSessionData));
+                        console.log("Session data stored in localStorage");
+                    } catch (err) {
+                        console.error('Error storing session data:', err);
+                    }
+                    
+                    // Check if it's time to move to the next topic
+                    if (exchangeCount >= EXCHANGES_PER_TOPIC) {
+                        // Add a transition message after a delay
+                        setTimeout(() => {
+                            const transitionMessages = [
+                                "とてもおもしろいお話をありがとうございます。",
+                                "そうだったのですね。楽しいお話をありがとうございます。",
+                                "素敵なお話をありがとうございます。",
+                                "そういうご経験があったのですね。おもしろいですね。",
+                                "なるほど、そうなんですね。とても参考になります。"
+                            ];
+                            
+                            // Select a random transition message
+                            const randomIndex = Math.floor(Math.random() * transitionMessages.length);
+                            const transitionMessage = transitionMessages[randomIndex];
+                            addMessage(transitionMessage, false);
+                            
+                            // Clear any remaining speech in the queue
+                            speechQueue = [];
+                            if (currentAudio) {
+                                try {
+                                    currentAudio.pause();
+                                    currentAudio = null;
+                                } catch (err) {
+                                    console.error("Error stopping current audio:", err);
+                                }
+                                isSpeaking = false;
+                            }
+                            
+                            // Read out the transition message
+                            speakText(transitionMessage);
+                            
+                            // Wait a moment before moving to the next topic
+                            setTimeout(() => {
+                                currentQuestionIndex++;
+                                
+                                if (currentQuestionIndex < selectedQuestions.length) {
+                                    const nextTopicMessage = "別のお話もお聞かせいただけますか？";
+                                    addMessage(nextTopicMessage, false);
+                                    
+                                    // Read out the next topic message
+                                    speakText(nextTopicMessage);
+                                    
+                                    setTimeout(() => {
+                                        startConversation();
+                                    }, 3000); // Longer delay to allow the message to be read
+                                } else {
+                                    startConversation(); // This will show the completion message
+                                }
+                            }, 3000); // Longer delay to allow the transition message to be read
+                        }, 1000);
+                    }
+                } else {
+                    statusDiv.textContent = 'エラー: ' + data.error;
+                    console.error('Server error:', data.error);
+                }
+            } catch (err) {
+                console.error('Error processing audio:', err);
+                console.error('Error details:', err.message);
+                statusDiv.textContent = '音声処理エラー';
+            }
+
+            statusDiv.textContent = '録音を開始するにはボタンをクリックしてください';
+        }
+
+        // Initialize audio recording
+        setupAudioRecording();
+
+        // Handle record button clicks
+        recordButton.addEventListener('click', function() {
+            if (!isRecording) {
+                startRecording();
+            } else {
+                stopRecording();
+            }
+        });
+
+        function startRecording() {
+            audioChunks = [];
+            mediaRecorder.start();
+            isRecording = true;
+            recordButton.classList.add('recording-animation');
+            statusDiv.textContent = '録音中... もう一度クリックすると停止します';
+        }
+
+        function stopRecording() {
+            mediaRecorder.stop();
+            isRecording = false;
+            recordButton.classList.remove('recording-animation');
+        }
+
+        function addMessage(text, isUser = false) {
+            const messagesDiv = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
+            
+            messageDiv.innerHTML = `
+                <div class="max-w-xs lg:max-w-md ${isUser ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'} rounded-lg px-4 py-2">
+                    <p class="text-sm">${text}</p>
+                </div>
+            `;
+            
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Start the conversation when the page loads
+        window.onload = function() {
+            console.log("Window loaded, initializing...");
+            
+            // Initialize progress UI
+            updateProgressUI();
+            
+            // Make sure character and emotion are set
+            if (!characterSelect.value) {
+                characterSelect.value = "2"; // Default to ずんだもん
+            }
+            
+            if (!emotionSelect.value) {
+                emotionSelect.value = "energetic"; // Default to energetic
+            }
+            
+            console.log("Selected character:", characterSelect.value);
+            console.log("Selected emotion:", emotionSelect.value);
+            
+            // Setup audio recording
+            setupAudioRecording();
+            
+            // Start conversation with slight delay to ensure everything is loaded
+            setTimeout(() => {
+                console.log("Starting conversation...");
+                startConversation();
+            }, 1000);
+        };
+
+        // End session button functionality
+        const endSessionBtn = document.getElementById('end-session-btn');
+        const reportModal = document.getElementById('report-modal');
+        const systemReport = document.getElementById('system-report');
+        const userReport = document.getElementById('user-report');
+        const sendReportBtn = document.getElementById('send-report-btn');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        
+        // Track conversation metrics
+        let conversationData = {
+            startTime: new Date(),
+            endTime: null,
+            messageCount: 0,
+            userMessages: [],
+            botMessages: [],
+            topics: [],
+            currentCharacter: "",
+            currentEmotion: ""
+        };
+        
+        // Generate system report based on conversation
+        function generateSystemReport() {
+            conversationData.endTime = new Date();
+            const duration = Math.round((conversationData.endTime - conversationData.startTime) / 60000); // minutes
+            
+            // Analyze conversation flow
+            let interactionQuality = "良好";
+            if (conversationData.messageCount < 4) {
+                interactionQuality = "短い会話";
+            } else if (conversationData.messageCount > 15) {
+                interactionQuality = "充実した会話";
+            }
+            
+            // Response patterns
+            let responsePattern = "";
+            if (conversationData.userMessages.length > 0) {
+                const avgUserLength = conversationData.userMessages.join('').length / conversationData.userMessages.length;
+                if (avgUserLength < 10) {
+                    responsePattern = "ユーザーの返答は短めでした";
+                } else if (avgUserLength > 30) {
+                    responsePattern = "ユーザーは詳しく話してくれました";
+                } else {
+                    responsePattern = "ユーザーはバランスの取れた返答をしていました";
+                }
+            }
+            
+            // Calculate words per minute (approximate)
+            let wpm = "測定不能";
+            if (conversationData.userMessages.length > 0 && duration > 0) {
+                // Approximate Japanese word count by counting characters and dividing by 2
+                const totalChars = conversationData.userMessages.join('').length;
+                const approxWords = Math.round(totalChars / 2);
+                wpm = Math.round(approxWords / duration);
+            }
+            
+            // Estimate lexical complexity
+            let lexicalComplexity = "標準";
+            if (conversationData.userMessages.length > 0) {
+                const allText = conversationData.userMessages.join(' ');
+                
+                // Check for complex grammar patterns (approximate method)
+                const hasKeigo = /でございます|いたします|になります|ございます/.test(allText);
+                const hasComplexSentences = /ならば|であれば|としても|にもかかわらず|ものの|ゆえに/.test(allText);
+                const hasLongSentences = conversationData.userMessages.some(msg => msg.length > 50);
+                
+                if (hasKeigo || hasComplexSentences || hasLongSentences) {
+                    lexicalComplexity = "高度";
+                } else if (allText.length < 100 && conversationData.userMessages.length > 3) {
+                    lexicalComplexity = "単純";
+                }
+            }
+            
+            // Average response time (if we had it)
+            const avgResponseTime = "測定していません";
+            
+            // Create report
+            return `
+会話セッションレポート (${new Date().toLocaleDateString()}):
+
+■ 基本情報
+・使用キャラクター: ${conversationData.currentCharacter} (${conversationData.currentEmotion}調)
+・会話時間: 約${duration}分
+・会話の往復回数: ${Math.floor(conversationData.messageCount/2)}回
+
+■ 会話内容の分析
+・話題: ${conversationData.topics.length > 0 ? conversationData.topics.join('、') : "自由会話"}
+・会話の流れ: ${interactionQuality}
+・応答パターン: ${responsePattern}
+
+■ 言語指標
+・推定発話速度: ${wpm} 語/分
+・語彙の複雑さ: ${lexicalComplexity}
+・平均応答時間: ${avgResponseTime}
+
+■ 総合評価
+全体として${interactionQuality === "充実した会話" ? "とても充実した" : "バランスの取れた"}会話でした。
+${conversationData.topics.length > 1 ? "複数の話題について会話することができました。" : "一つの話題についてじっくり話すことができました。"}
+${responsePattern === "ユーザーは詳しく話してくれました" ? "詳しく話していただき、ありがとうございました。" : "またぜひ会話を続けましょう。"}
+`;
+        }
+        
+        // End session button click handler
+        endSessionBtn.addEventListener('click', function() {
+            // Only allow ending if all topics are completed
+            if (!sessionData.isComplete) {
+                alert('まだすべての質問が終わっていません。3つの質問をすべて完了させてください。');
+                return;
+            }
+            
+            // Generate system report
+            const report = generateSystemReport();
+            systemReport.textContent = report;
+            
+            // Show modal
+            reportModal.classList.remove('hidden');
+        });
+        
+        // Close modal button
+        closeModalBtn.addEventListener('click', function() {
+            reportModal.classList.add('hidden');
+        });
+        
+        // Function to collect interaction data
+        function collectInteractions() {
+            const interactions = [];
+            // Try to get session data from localStorage
+            try {
+                const sessionData = JSON.parse(localStorage.getItem('voicevox_conversation_data') || '[]');
+                return sessionData;
+            } catch (err) {
+                console.error('Error retrieving session data:', err);
+                return [];
+            }
+        }
+        
+        // Send report button
+        sendReportBtn.addEventListener('click', async function() {
+            // Get user's rating
+            const rating = document.querySelector('input[name="rating"]:checked').value;
+            
+            // Get detailed question responses
+            const vocabulary = document.querySelector('input[name="vocabulary"]:checked').value;
+            const expression = document.querySelector('input[name="expression"]:checked').value;
+            const comfort = document.querySelector('input[name="comfort"]:checked').value;
+            const emotion = document.querySelector('input[name="emotion"]:checked').value;
+            const voice = document.querySelector('input[name="voice"]:checked').value;
+            const frustration = document.querySelector('input[name="frustration"]:checked').value;
+            
+            // Prepare report data
+            const reportData = {
+                systemReport: systemReport.textContent,
+                userReport: userReport.value,
+                rating: rating,
+                detailedResponses: {
+                    vocabulary,
+                    expression,
+                    comfort,
+                    emotion,
+                    voice,
+                    frustration
+                },
+                conversationMetrics: {
+                    duration: Math.round((conversationData.endTime - conversationData.startTime) / 60000),
+                    messageCount: conversationData.messageCount,
+                    topics: conversationData.topics,
+                    avgMessageLength: conversationData.userMessages.length > 0 
+                        ? Math.round(conversationData.userMessages.join('').length / conversationData.userMessages.length) 
+                        : 0
+                },
+                interactions: collectInteractions(),
+                email: "kinoshitakai0731@gmail.com",
+                timestamp: new Date().toISOString(),
+                sessionId: Date.now().toString(),
+                sessionType: "conversation"
+            };
+            
+            try {
+                // Send report to server
+                const response = await fetch('/api/send-report', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(reportData)
+                });
+                
+                if (response.ok) {
+                    alert('レポートが正常に送信されました。ありがとうございます！');
+                } else {
+                    alert('レポートの送信中にエラーが発生しました。');
+                }
+                
+                // Close modal
+                reportModal.classList.add('hidden');
+                
+                // Reset for a new session if user wants to continue
+                resetSession();
+            } catch (error) {
+                console.error('Error sending report:', error);
+                alert('レポートの送信中にエラーが発生しました。');
+            }
+        });
+        
+        // Reset session data for a new conversation
+        function resetSession() {
+            // Clear chat messages
+            chatMessages.innerHTML = '';
+            
+            // Reset conversation data
+            conversationData = {
+                startTime: new Date(),
+                endTime: null,
+                messageCount: 0,
+                userMessages: [],
+                botMessages: [],
+                topics: [],
+                currentCharacter: conversationData.currentCharacter,
+                currentEmotion: conversationData.currentEmotion
+            };
+            
+            // Reset topic selection
+            selectedQuestions = [];
+            currentQuestionIndex = 0;
+            exchangeCount = 0;
+            
+            // Start a new conversation
+            startConversation();
+        }
+    </script>
+</body>
+</html> 
